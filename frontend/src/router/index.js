@@ -47,6 +47,57 @@ const routes = [
     name: 'StudentRoster',
     component: () => import('@/views/StudentRoster.vue'),
     meta: { requiresAuth: true, requiresRole: 'teacher' }
+  },
+  // 消息通信模块
+  {
+    path: '/messages/private',
+    name: 'PrivateMessages',
+    component: () => import('@/views/messages/PrivateMessages.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/messages/group',
+    name: 'GroupChat',
+    component: () => import('@/views/messages/GroupChat.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/messages/notifications',
+    name: 'Notifications',
+    component: () => import('@/views/messages/Notifications.vue'),
+    meta: { requiresAuth: true }
+  },
+  // 签到模块 - 教师/管理员
+  {
+    path: '/checkin/manage',
+    name: 'CheckinManage',
+    component: () => import('@/views/checkin/CheckinManage.vue'),
+    meta: { requiresAuth: true, requiresRole: 'teacher' }
+  },
+  {
+    path: '/checkin/create',
+    name: 'CheckinCreate',
+    component: () => import('@/views/checkin/CheckinCreate.vue'),
+    meta: { requiresAuth: true, requiresRole: 'teacher' }
+  },
+  {
+    path: '/checkin/records',
+    name: 'CheckinRecords',
+    component: () => import('@/views/checkin/CheckinRecords.vue'),
+    meta: { requiresAuth: true, requiresRole: 'teacher' }
+  },
+  {
+    path: '/checkin/smart',
+    name: 'SmartCheckin',
+    component: () => import('@/views/checkin/SmartCheckin.vue'),
+    meta: { requiresAuth: true, requiresRole: 'teacher' }
+  },
+  // 签到模块 - 学生
+  {
+    path: '/checkin/student',
+    name: 'StudentCheckin',
+    component: () => import('@/views/checkin/StudentCheckin.vue'),
+    meta: { requiresAuth: true, requiresRole: 'student' }
   }
 ]
 
@@ -55,39 +106,31 @@ const router = createRouter({
   routes
 })
 
-/**
- * 路由守卫
- * 根据登录状态和用户角色控制路由访问
- */
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   
-  // 如果有token但没有用户信息，尝试验证token
   if (userStore.token && !userStore.userInfo) {
     await userStore.verifyTokenAction()
   }
   
-  // 检查路由是否需要认证
   if (to.meta.requiresAuth) {
     if (!userStore.isLoggedIn) {
-      // 未登录，跳转到登录页
-      next({
-        path: '/login',
-        query: { redirect: to.fullPath }
-      })
+      next({ path: '/login', query: { redirect: to.fullPath } })
       return
     }
     
-    // 检查角色权限
     if (to.meta.requiresRole) {
-      if (userStore.userRole !== to.meta.requiresRole) {
-        // 角色不匹配，跳转到仪表板
+      // 管理员可以访问教师页面
+      const allowedRoles = to.meta.requiresRole === 'teacher' 
+        ? ['teacher', 'admin'] 
+        : [to.meta.requiresRole]
+      
+      if (!allowedRoles.includes(userStore.userRole)) {
         next('/dashboard')
         return
       }
     }
   } else {
-    // 如果已登录，访问登录/注册页面时跳转到仪表板
     if (userStore.isLoggedIn && (to.path === '/login' || to.path === '/register')) {
       next('/dashboard')
       return

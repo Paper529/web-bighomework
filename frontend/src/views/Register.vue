@@ -1,147 +1,88 @@
 <template>
-  <div class="register-container">
-    <el-card class="register-card">
-      <template #header>
-        <div class="card-header">
-          <h2>用户注册</h2>
-          <p>Web教育系统</p>
-        </div>
-      </template>
+  <div class="register-page">
+    <div class="register-box">
+      <div class="register-header">
+        <svg height="48" viewBox="0 0 24 24" width="48" fill="#1f2328">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        <h1>创建账号</h1>
+        <p>加入教育系统，开始学习之旅</p>
+      </div>
       
-      <el-form :model="registerForm" :rules="rules" ref="registerFormRef" label-width="80px">
-        <el-form-item label="角色" prop="role">
-          <el-radio-group v-model="registerForm.role">
-            <el-radio label="student">学生</el-radio>
-            <el-radio label="teacher">教师</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        
-        <el-form-item label="邮箱" prop="email">
-          <el-input
-            v-model="registerForm.email"
-            placeholder="请输入QQ邮箱"
-          />
-        </el-form-item>
-        
-        <el-form-item label="验证码" prop="verificationCode">
-          <div style="display: flex; gap: 10px;">
-            <el-input
-              v-model="registerForm.verificationCode"
-              placeholder="请输入验证码"
-              style="flex: 1;"
-            />
-            <el-button
-              @click="sendCode"
-              :disabled="countdown > 0"
-              :loading="sendingCode"
-            >
-              {{ countdown > 0 ? `${countdown}秒后重试` : '发送验证码' }}
-            </el-button>
+      <div class="register-card">
+        <el-form :model="registerForm" :rules="rules" ref="registerFormRef" label-position="top">
+          <el-form-item label="选择角色" prop="role">
+            <div class="role-tabs">
+              <button type="button" :class="['role-tab', { active: registerForm.role === 'student' }]" @click="registerForm.role = 'student'">
+                🎓 学生
+              </button>
+              <button type="button" :class="['role-tab', { active: registerForm.role === 'teacher' }]" @click="registerForm.role = 'teacher'">
+                👨‍🏫 教师
+              </button>
+            </div>
+          </el-form-item>
+          
+          <el-form-item label="邮箱地址" prop="email">
+            <el-input v-model="registerForm.email" placeholder="you@example.com" />
+          </el-form-item>
+          
+          <el-form-item label="验证码" prop="verificationCode">
+            <div class="code-row">
+              <el-input v-model="registerForm.verificationCode" placeholder="6位验证码" />
+              <el-button @click="sendCode" :disabled="countdown > 0" :loading="sendingCode">
+                {{ countdown > 0 ? `${countdown}s` : '发送' }}
+              </el-button>
+            </div>
+          </el-form-item>
+          
+          <div class="form-row">
+            <el-form-item label="密码" prop="password">
+              <el-input v-model="registerForm.password" type="password" placeholder="至少6位" show-password />
+            </el-form-item>
+            <el-form-item label="确认密码" prop="confirmPassword">
+              <el-input v-model="registerForm.confirmPassword" type="password" placeholder="再次输入" show-password />
+            </el-form-item>
           </div>
-        </el-form-item>
-        
-        <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="registerForm.password"
-            type="password"
-            placeholder="请输入密码（至少6位）"
-            show-password
-          />
-        </el-form-item>
-        
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input
-            v-model="registerForm.confirmPassword"
-            type="password"
-            placeholder="请再次输入密码"
-            show-password
-          />
-        </el-form-item>
-        
-        <el-form-item label="真实姓名" prop="realName">
-          <el-input
-            v-model="registerForm.realName"
-            placeholder="请输入真实姓名"
-          />
-        </el-form-item>
-        
-        <el-form-item label="学号" prop="studentNumber" v-if="registerForm.role === 'student'">
-          <el-input
-            v-model="registerForm.studentNumber"
-            placeholder="请输入学号"
-            @blur="checkStudentInRoster"
-          />
-        </el-form-item>
-        
-        <el-form-item label="照片" prop="photo" v-if="registerForm.role === 'student'">
-          <el-upload
-            class="upload-demo"
-            :auto-upload="false"
-            :on-change="handleFileChange"
-            :limit="1"
-            accept="image/*"
-            list-type="picture-card"
-            :file-list="fileList"
-          >
-            <el-icon><Plus /></el-icon>
-          </el-upload>
-          <div class="el-upload__tip">
-            请上传清晰的正面照片，用于人脸身份验证
-          </div>
-          <div v-if="faceVerified" class="verification-success">
-            <el-tag type="success">✓ 人脸验证通过 (相似度: {{ (similarity * 100).toFixed(1) }}%)</el-tag>
-          </div>
-        </el-form-item>
-        
-        <el-form-item v-if="registerForm.role === 'student' && registerForm.photo && !faceVerified">
-          <el-button
-            type="warning"
-            @click="handleFaceVerification"
-            :loading="verifying"
-            style="width: 100%"
-          >
-            <el-icon><Avatar /></el-icon>
-            验证人脸
-          </el-button>
-        </el-form-item>
-        
-        <el-form-item label="照片" prop="photo" v-if="registerForm.role === 'teacher'">
-          <el-upload
-            class="upload-demo"
-            :auto-upload="false"
-            :on-change="handleFileChange"
-            :limit="1"
-            accept="image/*"
-          >
-            <el-button size="small">选择照片</el-button>
-            <template #tip>
-              <div class="el-upload__tip">
-                选填，用于人脸识别
+          
+          <el-form-item label="真实姓名" prop="realName">
+            <el-input v-model="registerForm.realName" placeholder="请输入真实姓名" />
+          </el-form-item>
+          
+          <template v-if="registerForm.role === 'student'">
+            <el-form-item label="学号" prop="studentNumber">
+              <el-input v-model="registerForm.studentNumber" placeholder="请输入学号" />
+            </el-form-item>
+            
+            <el-form-item label="人脸照片">
+              <el-upload :auto-upload="false" :on-change="handleFileChange" :limit="1" accept="image/*" list-type="picture-card" :file-list="fileList" class="photo-upload">
+                <div class="upload-trigger">📷 上传</div>
+              </el-upload>
+              <p class="form-hint">请上传清晰的正面照片用于身份验证</p>
+              
+              <div v-if="faceVerified" class="verify-badge success">
+                ✓ 人脸验证通过 ({{ (similarity * 100).toFixed(1) }}%)
               </div>
-            </template>
-          </el-upload>
-        </el-form-item>
-        
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="loading"
-            @click="handleRegister"
-            :disabled="registerForm.role === 'student' && !faceVerified"
-            style="width: 100%"
-          >
-            注册
+            </el-form-item>
+            
+            <el-button v-if="registerForm.photo && !faceVerified" @click="handleFaceVerification" :loading="verifying" class="verify-btn">
+              🔍 验证人脸
+            </el-button>
+          </template>
+          
+          <el-button type="primary" :loading="loading" @click="handleRegister" :disabled="registerForm.role === 'student' && !faceVerified" class="submit-btn">
+            {{ registerForm.role === 'teacher' ? '提交注册（需审核）' : '创建账号' }}
           </el-button>
-          <div v-if="registerForm.role === 'student' && !faceVerified" class="register-tip">
-            <el-text type="warning">请先完成人脸验证后再注册</el-text>
-          </div>
-        </el-form-item>
-        
-        <div class="links">
-          <router-link to="/login">已有账号？立即登录</router-link>
-        </div>
-      </el-form>
-    </el-card>
+          
+          <p v-if="registerForm.role === 'student' && !faceVerified && registerForm.photo" class="form-hint warning">
+            ⚠️ 请先完成人脸验证
+          </p>
+        </el-form>
+      </div>
+      
+      <div class="register-footer">
+        <p>已有账号？<router-link to="/login">立即登录</router-link></p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -151,12 +92,10 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { sendVerificationCode } from '@/api/auth'
 import { ElMessage } from 'element-plus'
-import { Plus, Avatar } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const router = useRouter()
 const userStore = useUserStore()
-
 const registerFormRef = ref(null)
 const loading = ref(false)
 const sendingCode = ref(false)
@@ -179,235 +118,240 @@ const registerForm = reactive({
 })
 
 const validateConfirmPassword = (rule, value, callback) => {
-  if (value === '') {
-    callback(new Error('请再次输入密码'))
-  } else if (value !== registerForm.password) {
-    callback(new Error('两次输入的密码不一致'))
-  } else {
-    callback()
-  }
+  if (value === '') callback(new Error('请再次输入密码'))
+  else if (value !== registerForm.password) callback(new Error('两次密码不一致'))
+  else callback()
 }
 
 const rules = {
-  role: [
-    { required: true, message: '请选择角色', trigger: 'change' }
-  ],
-  email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
-  ],
-  verificationCode: [
-    { required: true, message: '请输入验证码', trigger: 'blur' }
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度至少6位', trigger: 'blur' }
-  ],
-  confirmPassword: [
-    { required: true, validator: validateConfirmPassword, trigger: 'blur' }
-  ],
-  realName: [
-    { required: true, message: '请输入真实姓名', trigger: 'blur' }
-  ],
-  studentNumber: [
-    { required: true, message: '请输入学号', trigger: 'blur' }
-  ]
+  role: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  email: [{ required: true, message: '请输入邮箱', trigger: 'blur' }, { type: 'email', message: '邮箱格式错误', trigger: 'blur' }],
+  verificationCode: [{ required: true, message: '请输入验证码', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }, { min: 6, message: '至少6位', trigger: 'blur' }],
+  confirmPassword: [{ required: true, validator: validateConfirmPassword, trigger: 'blur' }],
+  realName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  studentNumber: [{ required: true, message: '请输入学号', trigger: 'blur' }]
 }
 
 const sendCode = async () => {
-  if (!registerForm.email) {
-    ElMessage.warning('请先输入邮箱')
-    return
-  }
-  
+  if (!registerForm.email) { ElMessage.warning('请先输入邮箱'); return }
   sendingCode.value = true
-  
   try {
     const response = await sendVerificationCode(registerForm.email)
-    
     if (response.success) {
       ElMessage.success(response.message)
-      // 开始60秒倒计时
       countdown.value = 60
-      const timer = setInterval(() => {
-        countdown.value--
-        if (countdown.value <= 0) {
-          clearInterval(timer)
-        }
-      }, 1000)
+      const timer = setInterval(() => { countdown.value--; if (countdown.value <= 0) clearInterval(timer) }, 1000)
     }
-  } catch (error) {
-    console.error('发送验证码失败:', error)
-  } finally {
-    sendingCode.value = false
-  }
+  } finally { sendingCode.value = false }
 }
 
 const handleFileChange = (file) => {
   registerForm.photo = file.raw
   fileList.value = [file]
-  // Reset verification when photo changes
   faceVerified.value = false
-  similarity.value = 0
-}
-
-const checkStudentInRoster = async () => {
-  // This could optionally check if student ID exists in roster
-  // For now, we'll do the check during face verification
 }
 
 const handleFaceVerification = async () => {
-  if (!registerForm.studentNumber) {
-    ElMessage.warning('请先输入学号')
-    return
-  }
-  
-  if (!registerForm.photo) {
-    ElMessage.warning('请先上传照片')
-    return
-  }
-  
+  if (!registerForm.studentNumber) { ElMessage.warning('请先输入学号'); return }
+  if (!registerForm.photo) { ElMessage.warning('请先上传照片'); return }
   verifying.value = true
-  
   try {
     const formData = new FormData()
     formData.append('studentIdNumber', registerForm.studentNumber)
     formData.append('faceImage', registerForm.photo)
-    
-    const res = await request({
-      url: '/roster/verify-face',
-      method: 'post',
-      data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      },
-      // This endpoint doesn't require auth
-      skipAuth: true
-    })
-    
+    const res = await request({ url: '/roster/verify-face', method: 'post', data: formData, headers: { 'Content-Type': 'multipart/form-data' }, skipAuth: true })
     if (res.success) {
       faceVerified.value = true
       similarity.value = res.similarity
       rosterId.value = res.roster_id
-      ElMessage.success(`人脸验证通过！相似度: ${(res.similarity * 100).toFixed(1)}%`)
-    } else {
-      ElMessage.error(res.message || '人脸验证失败')
-    }
-  } catch (error) {
-    console.error('Face verification error:', error)
-    ElMessage.error(error.response?.data?.message || '人脸验证失败，请重试')
-  } finally {
-    verifying.value = false
-  }
+      ElMessage.success(`验证通过！`)
+    } else ElMessage.error(res.message || '验证失败')
+  } catch (error) { ElMessage.error('验证失败，请重试') }
+  finally { verifying.value = false }
 }
 
 const handleRegister = async () => {
   if (!registerFormRef.value) return
-  
   await registerFormRef.value.validate(async (valid) => {
     if (!valid) return
-    
-    // 学生必须完成人脸验证
-    if (registerForm.role === 'student') {
-      if (!registerForm.photo) {
-        ElMessage.warning('请上传照片用于人脸识别')
-        return
-      }
-      if (!faceVerified.value) {
-        ElMessage.warning('请先完成人脸验证')
-        return
-      }
+    if (registerForm.role === 'student' && (!registerForm.photo || !faceVerified.value)) {
+      ElMessage.warning('请完成人脸验证'); return
     }
-    
     loading.value = true
-    
     try {
-      // Add rosterId to form data for students
       const formDataToSubmit = { ...registerForm }
-      if (registerForm.role === 'student') {
-        formDataToSubmit.rosterId = rosterId.value
-      }
-      
+      if (registerForm.role === 'student') formDataToSubmit.rosterId = rosterId.value
       const result = await userStore.registerAction(formDataToSubmit)
-      
-      if (result.success) {
-        setTimeout(() => {
-          router.push('/login')
-        }, 1500)
-      }
-    } finally {
-      loading.value = false
-    }
+      if (result.success) setTimeout(() => router.push('/login'), 1500)
+    } finally { loading.value = false }
   })
 }
 </script>
 
 <style scoped>
-.register-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.register-page {
   min-height: 100vh;
-  padding: 40px 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f6f8fa;
+  padding: 40px 20px;
+}
+
+.register-box {
+  width: 100%;
+  max-width: 440px;
+}
+
+.register-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.register-header svg {
+  margin-bottom: 16px;
+}
+
+.register-header h1 {
+  font-size: 24px;
+  font-weight: 300;
+  color: #1f2328;
+  margin: 0 0 8px;
+}
+
+.register-header p {
+  color: #656d76;
+  font-size: 14px;
+  margin: 0;
 }
 
 .register-card {
-  width: 560px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 20px;
 }
 
-.card-header {
-  text-align: center;
+.role-tabs {
+  display: flex;
+  gap: 8px;
 }
 
-.card-header h2 {
-  margin: 0;
-  color: #333;
-  font-size: 28px;
-}
-
-.card-header p {
-  margin: 8px 0 0 0;
-  color: #666;
+.role-tab {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  cursor: pointer;
   font-size: 14px;
+  font-weight: 500;
+  color: #1f2328;
+  transition: all 0.15s;
 }
 
-.links {
-  text-align: center;
-  margin-top: 16px;
+.role-tab:hover {
+  border-color: #0969da;
 }
 
-.links a {
-  color: #409eff;
-  text-decoration: none;
+.role-tab.active {
+  border-color: #0969da;
+  background: #ddf4ff;
+  color: #0969da;
+}
+
+.code-row {
+  display: flex;
+  gap: 8px;
+}
+
+.code-row .el-input {
+  flex: 1;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row .el-form-item {
+  flex: 1;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #656d76;
+  margin: 8px 0 0;
+}
+
+.form-hint.warning {
+  color: #bf8700;
+}
+
+.photo-upload :deep(.el-upload--picture-card) {
+  width: 100px;
+  height: 100px;
+  border-radius: 6px;
+  border: 1px dashed #d0d7de;
+  background: #f6f8fa;
+}
+
+.upload-trigger {
   font-size: 14px;
+  color: #656d76;
 }
 
-.links a:hover {
-  text-decoration: underline;
+.verify-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  margin-top: 8px;
 }
 
-.upload-demo {
+.verify-badge.success {
+  background: #dafbe1;
+  color: #1a7f37;
+}
+
+.verify-btn {
   width: 100%;
+  margin-bottom: 16px;
 }
 
-.verification-success {
-  margin-top: 10px;
+.submit-btn {
+  width: 100%;
+  background: #2da44e;
+  border-color: #2da44e;
+  font-weight: 500;
 }
 
-.register-tip {
-  margin-top: 10px;
+.submit-btn:hover {
+  background: #2c974b;
+}
+
+.register-footer {
+  margin-top: 16px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
   text-align: center;
+  font-size: 14px;
 }
 
-:deep(.el-upload-list--picture-card .el-upload-list__item) {
-  width: 148px;
-  height: 148px;
+.register-footer a {
+  color: #0969da;
+  font-weight: 500;
 }
 
-:deep(.el-upload--picture-card) {
-  width: 148px;
-  height: 148px;
+:deep(.el-form-item__label) {
+  font-weight: 600;
+  color: #1f2328;
+}
+
+:deep(.el-input__wrapper) {
+  background: #f6f8fa;
 }
 </style>
