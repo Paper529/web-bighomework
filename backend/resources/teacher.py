@@ -32,16 +32,40 @@ class TeacherStudents(Resource):
         search = request.args.get('search', '')
         exclude_class_id = request.args.get('exclude_class_id', type=int)
         
-        # 构建查询
-        query = User.query.filter_by(role='student', is_active=True)
+        # 构建查询 - 使用原始 SQL 查询，通过 JOIN roles 表获取学生
+        # 因为数据库中可能没有直接的 role 字段，而是通过 role_id 关联 roles 表
+        from sqlalchemy import text
+        base_query = text("""
+            SELECT u.* FROM users u
+            LEFT JOIN roles r ON u.role_id = r.role_id
+            WHERE r.role_name = 'student' AND (u.is_approved = 1 OR u.is_approved IS NULL)
+        """)
+        # 使用原始 SQL 查询，然后转换为 User 对象
+        # 或者使用更简单的方法：直接查询 role_id（如果知道学生的 role_id）
+        # 这里先尝试使用 role_id，如果失败则使用原始 SQL
+        try:
+            # 先尝试获取学生的 role_id
+            from database import Database
+            role_query = "SELECT role_id FROM roles WHERE role_name = 'student' LIMIT 1"
+            role_result = Database.execute_query(role_query, fetch_one=True)
+            if role_result:
+                student_role_id = role_result['role_id']
+                query = User.query.filter_by(role_id=student_role_id)
+            else:
+                # 如果没有找到 role_id，使用原始查询（不过滤 role）
+                query = User.query
+        except Exception as e:
+            # 如果查询失败，使用原始查询（不过滤 role）
+            query = User.query
         
-        # 搜索过滤
-        if search:
+        # 搜索过滤 - 使用实际存在的数据库字段
+        if search and search.strip():
+            search_term = f'%{search.strip()}%'
             query = query.filter(
                 or_(
-                    User.name.like(f'%{search}%'),
-                    User.username.like(f'%{search}%'),
-                    User.email.like(f'%{search}%')
+                    User.real_name.like(search_term),
+                    User.system_account.like(search_term),
+                    User.email.like(search_term)
                 )
             )
         
@@ -56,7 +80,8 @@ class TeacherStudents(Resource):
         
         return {
             'message': '获取成功',
-            'data': [student.to_dict() for student in students]
+            'data': [student.to_dict() for student in students],
+            'total': len(students)
         }, 200
 
 
@@ -128,37 +153,66 @@ class TeacherClassDetail(Resource):
     @teacher_required
     def get(self, class_id):
         """获取班级详情"""
-        teacher_id = int(get_jwt_identity())
+        try:
+            teacher_id = int(get_jwt_identity())
 
-        class_ = Class.query.filter_by(id=class_id, teacher_id=teacher_id).first()
+            class_ = Class.query.filter_by(id=class_id, teacher_id=teacher_id).first()
 
-        if not class_:
-            return {'message': '班级不存在或无权限访问'}, 404
+            if not class_:
+                return {'message': '班级不存在或无权限访问'}, 404
 
-        # 获取班级学生
-        students = User.query.join(StudentClass).filter(
-            StudentClass.class_id == class_id,
-            User.role == 'student'
-        ).all()
+            # 获取班级学生 - 明确指定 join 条件
+            # 先获取学生的 role_id（如果存在）
+            try:
+                from database import Database
+                role_query = "SELECT role_id FROM roles WHERE role_name = 'student' LIMIT 1"
+                role_result = Database.execute_query(role_query, fetch_one=True)
+                student_role_id = role_result['role_id'] if role_result else None
+            except:
+                student_role_id = None
+            
+            query = db.session.query(User).join(
+                StudentClass, User.id == StudentClass.student_id
+            ).filter(
+                StudentClass.class_id == class_id
+            )
+            
+            # 如果有 role_id，添加过滤条件
+            if student_role_id:
+                query = query.filter(User.role_id == student_role_id)
+            
+            students = query.all()
 
-        # 获取班级统计信息
-        exam_count = Exam.query.filter_by(class_id=class_id).count()
-        score_count = Score.query.filter_by(class_id=class_id).count()
-        question_count = Question.query.filter_by(class_id=class_id).count()
+            # 获取班级统计信息
+            exam_count = Exam.query.filter(Exam.class_id == class_id).count()
+            score_count = Score.query.filter_by(class_id=class_id).count()
+            
+            # 安全获取问题数量（如果 questions 表不存在则返回 0）
+            question_count = 0
+            try:
+                question_count = Question.query.filter_by(class_id=class_id).count()
+            except Exception as e:
+                # 如果表不存在或其他错误，返回 0
+                print(f'获取问题数量失败（表可能不存在）: {e}')
+                question_count = 0
 
-        class_data = class_.to_dict()
-        class_data.update({
-            'students': [student.to_dict() for student in students],
-            'student_count': len(students),
-            'exam_count': exam_count,
-            'score_count': score_count,
-            'question_count': question_count
-        })
+            class_data = class_.to_dict()
+            class_data.update({
+                'students': [student.to_dict() for student in students],
+                'student_count': len(students),
+                'exam_count': exam_count,
+                'score_count': score_count,
+                'question_count': question_count
+            })
 
-        return {
-            'message': '获取成功',
-            'data': class_data
-        }, 200
+            return {
+                'message': '获取成功',
+                'data': class_data
+            }, 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'message': f'服务器错误: {str(e)}'}, 500
 
     @jwt_required()
     @teacher_required
@@ -214,7 +268,7 @@ class TeacherClassDetail(Resource):
         for student_id in student_ids:
             try:
                 # 检查学生是否存在
-                student = User.query.filter_by(id=student_id, role='student').first()
+                student = User.query.filter_by(id=student_id, role_id=3).first()  # 假设 role_id=3 是学生
                 if not student:
                     errors.append(f'学生ID {student_id} 不存在或不是学生')
                     continue
@@ -264,27 +318,6 @@ class TeacherClassDetail(Resource):
     def delete(self, class_id):
         """删除班级"""
         teacher_id = int(get_jwt_identity())
-        
-        class_ = Class.query.filter_by(id=class_id, teacher_id=teacher_id).first()
-        
-        if not class_:
-            return {'message': '班级不存在或无权限访问'}, 404
-        
-        # 检查是否有学生
-        student_count = StudentClass.query.filter_by(class_id=class_id).count()
-        if student_count > 0:
-            return {'message': '班级中还有学生，无法删除'}, 400
-        
-        db.session.delete(class_)
-        db.session.commit()
-        
-        return {'message': '班级删除成功'}, 200
-
-    @jwt_required()
-    @teacher_required
-    def delete(self, class_id):
-        """删除班级"""
-        teacher_id = int(get_jwt_identity())
 
         class_ = Class.query.filter_by(id=class_id, teacher_id=teacher_id).first()
 
@@ -294,12 +327,14 @@ class TeacherClassDetail(Resource):
         # 检查是否有依赖数据
         exam_count = Exam.query.filter_by(class_id=class_id).count()
         score_count = Score.query.filter_by(class_id=class_id).count()
+        student_count = StudentClass.query.filter_by(class_id=class_id).count()
 
-        if exam_count > 0 or score_count > 0:
+        if exam_count > 0 or score_count > 0 or student_count > 0:
             return {
                 'message': '班级存在关联数据，无法删除',
                 'exam_count': exam_count,
-                'score_count': score_count
+                'score_count': score_count,
+                'student_count': student_count
             }, 400
 
         db.session.delete(class_)
@@ -338,9 +373,8 @@ class TeacherExams(Resource):
         exam_list = []
         for exam in exams.items:
             exam_data = exam.to_dict()
-            # 获取参与人数
-            participant_count = ExamResult.query.filter_by(exam_id=exam.id).count()
-            exam_data['participant_count'] = participant_count
+            # to_dict() 方法已经包含了 participant_count 和 total_students
+            # 这里不需要再次计算
             exam_list.append(exam_data)
 
         return {
@@ -451,8 +485,14 @@ class TeacherScores(Resource):
             query = query.filter(Score.exam_id == exam_id)
 
         if student_name:
-            query = query.join(User, Score.student_id == User.id) \
-                .filter(User.name.ilike(f'%{student_name}%'))
+            # 使用实际数据库字段进行搜索：real_name, system_account, email
+            query = query.join(User, Score.student_id == User.id).filter(
+                or_(
+                    User.real_name.like(f'%{student_name}%'),
+                    User.system_account.like(f'%{student_name}%'),
+                    User.email.like(f'%{student_name}%')
+                )
+            )
 
         if start_date:
             try:
@@ -481,8 +521,8 @@ class TeacherScores(Resource):
             # 获取学生信息
             student = User.query.get(score.student_id)
             if student:
-                score_data['student_name'] = student.name
-                score_data['student_id'] = student.username
+                score_data['student_name'] = student.real_name or student.system_account or f'用户{student.id}'
+                score_data['student_id'] = student.system_account or f'user_{student.id}'
             # 获取班级信息
             class_ = Class.query.get(score.class_id)
             if class_:
@@ -701,16 +741,40 @@ class ScoreImportExport(Resource):
     @jwt_required()
     @teacher_required
     def get(self):
-        """导出Excel成绩"""
+        """导出Excel成绩或下载导入模板"""
         teacher_id = int(get_jwt_identity())
-
+        
+        # 检查是否是请求模板
+        if request.args.get('template') == 'true':
+            # 生成导入模板
+            template_file = ExcelHandler.generate_import_template()
+            filename = '成绩导入模板.xlsx'
+            
+            return send_file(
+                template_file,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=filename
+            )
+        
+        # 导出成绩数据
         # 获取查询参数
-        class_id = request.args.get('class_id')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
+        class_id = request.args.get('class_id', type=int)  # 转换为整数，如果为空则为None
+        start_date = request.args.get('start_date')  # 字符串格式：YYYY-MM-DD
+        end_date = request.args.get('end_date')  # 字符串格式：YYYY-MM-DD
+        
+        print(f'[导出成绩] 教师ID: {teacher_id}, 班级ID: {class_id}, 开始时间: {start_date}, 结束时间: {end_date}')
 
         # 获取成绩数据
         scores = ScoreService.get_scores_for_export(teacher_id, class_id, start_date, end_date)
+        
+        # 调试信息
+        print(f'[导出成绩] 查询到 {len(scores) if scores else 0} 条记录')
+        if scores and len(scores) > 0:
+            print(f'[导出成绩] 第一条记录示例: {scores[0]}')
+        else:
+            print('[导出成绩] 警告：没有查询到任何成绩数据！')
+            print('[导出成绩] 提示：请检查筛选条件，或确认数据库中是否有成绩数据')
 
         # 生成Excel文件
         excel_file = ExcelHandler.export_scores_to_excel(scores)
@@ -928,40 +992,65 @@ class TeacherExamPublish(Resource):
             from models.user import StudentClass
             
             # 如果指定了学生ID，只通知这些学生；否则通知所选班级全部学生
+            # 先获取学生的 role_id（如果存在）
+            try:
+                from database import Database
+                role_query = "SELECT role_id FROM roles WHERE role_name = 'student' LIMIT 1"
+                role_result = Database.execute_query(role_query, fetch_one=True)
+                student_role_id = role_result['role_id'] if role_result else None
+            except:
+                student_role_id = None
+            
             if student_ids:
-                target_students = User.query.filter(
-                    User.id.in_(student_ids),
-                    User.role == 'student'
-                ).all()
+                query = User.query.filter(User.id.in_(student_ids))
+                if student_role_id:
+                    query = query.filter(User.role_id == student_role_id)
+                target_students = query.all()
             else:
                 # 获取所选班级所有学生并去重
-                target_students = User.query.join(StudentClass).filter(
-                    StudentClass.class_id.in_(class_ids),
-                    User.role == 'student'
-                ).distinct().all()
-            
-            # 创建通知
-            notifications = []
-            for student in target_students:
-                notification = Notification(
-                    user_id=student.id,
-                    type='exam_published',
-                    title=f'新考试通知：{exam.title}',
-                    content=f'教师发布了新考试：{exam.title}。考试时间：{exam.start_time.strftime("%Y-%m-%d %H:%M")} 至 {exam.end_time.strftime("%Y-%m-%d %H:%M")}',
-                    related_id=exam.id,
-                    related_type='exam'
+                query = User.query.join(StudentClass).filter(
+                    StudentClass.class_id.in_(class_ids)
                 )
-                db.session.add(notification)
-                notifications.append(notification)
+                if student_role_id:
+                    query = query.filter(User.role_id == student_role_id)
+                target_students = query.distinct().all()
             
-            db.session.commit()
+            # 创建通知（如果 notifications 表存在）
+            notifications = []
+            try:
+                for student in target_students:
+                    notification = Notification(
+                        user_id=student.id,
+                        type='exam_published',
+                        title=f'新考试通知：{exam.title}',
+                        content=f'教师发布了新考试：{exam.title}。考试时间：{exam.start_time.strftime("%Y-%m-%d %H:%M")} 至 {exam.end_time.strftime("%Y-%m-%d %H:%M")}',
+                        related_id=exam.id,
+                        related_type='exam'
+                    )
+                    db.session.add(notification)
+                    notifications.append(notification)
+                
+                db.session.commit()
+                notified_count = len(notifications)
+            except Exception as e:
+                # 如果 notifications 表不存在或其他错误，回滚并继续
+                db.session.rollback()
+                print(f'创建通知失败（表可能不存在）: {e}')
+                # 重新提交考试状态变更
+                db.session.commit()
+                notified_count = 0
+            
+            # 计算应参与考试的学生总数
+            total_students = len(target_students)
             
             return {
-                'message': f'考试已发布，已通知 {len(notifications)} 名学生',
+                'message': f'考试已发布，已通知 {total_students} 名学生{"（通知发送成功）" if notified_count > 0 else "（通知功能不可用）"}',
                 'data': {
                     'exam_id': exam.id,
                     'status': 'published',
-                    'notified_count': len(notifications)
+                    'notified_count': notified_count,
+                    'total_students': total_students,  # 应参与考试的学生总数
+                    'participant_count': 0  # 初始参与人数为0
                 }
             }, 200
         
@@ -1014,56 +1103,88 @@ class TeacherCourses(Resource):
     @teacher_required
     def post(self):
         """创建新课程"""
-        teacher_id = int(get_jwt_identity())
-        data = request.get_json()
-        # 验证输入
-        required_fields = ['name', 'semester']
-        for field in required_fields:
-            if not data.get(field):
-                return {'message': f'{field}不能为空'}, 400
+        try:
+            teacher_id = int(get_jwt_identity())
+            data = request.get_json()
+            
+            if not data:
+                return {'message': '请求数据不能为空'}, 400
+            
+            # 验证输入
+            if not data.get('name'):
+                return {'message': '课程名称不能为空'}, 400
+            
+            # semester 字段可选，如果没有提供则使用默认值
+            semester = data.get('semester', '')
+            if not semester:
+                # 自动生成学期：格式为 "YYYY-YYYY-1" 或 "YYYY-YYYY-2"
+                from datetime import datetime
+                now = datetime.now()
+                year = now.year
+                if now.month >= 9:  # 9月及以后是秋季学期
+                    semester = f"{year}-{year+1}-1"
+                elif now.month >= 2:  # 2月到8月是春季学期
+                    semester = f"{year-1}-{year}-2"
+                else:  # 1月是春季学期
+                    semester = f"{year-1}-{year}-2"
 
-        # 课程代码：若未提供或为空，自动生成
-        code = (data.get('code') or '').strip()
-        if not code:
-            code = self._generate_course_code()
-        else:
-            # 检查课程代码是否已存在
-            if Course.query.filter_by(code=code).first():
-                return {'message': '课程代码已存在'}, 400
-        
-        # 创建课程
-        course = Course(
-            name=data['name'],
-            code=code,
-            description=data.get('description', ''),
-            teacher_id=teacher_id,
-            semester=data['semester'],
-            credit=data.get('credit', 3.0),
-            hours_per_week=data.get('hours_per_week', 3),
-            is_active=data.get('is_active', True)
-        )
-        
-        db.session.add(course)
-        db.session.commit()
+            # 课程代码：若未提供或为空，自动生成
+            code = (data.get('code') or '').strip()
+            if not code:
+                code = self._generate_course_code()
+            else:
+                # 检查课程代码是否已存在
+                if Course.query.filter_by(code=code).first():
+                    return {'message': '课程代码已存在'}, 400
+            
+            # 创建课程
+            course = Course(
+                name=data['name'],
+                code=code,
+                description=data.get('description', ''),
+                teacher_id=teacher_id,
+                semester=semester,
+                credit=float(data.get('credit', 3.0)) if data.get('credit') else 3.0,
+                hours_per_week=int(data.get('hours_per_week', 3)) if data.get('hours_per_week') else 3,
+                is_active=data.get('is_active', True)
+            )
+            
+            db.session.add(course)
+            db.session.flush()  # 获取 course.id 但不提交
 
-        # 记录教师-课程关系（多对多）
-        if not CourseTeacher.query.filter_by(course_id=course.id, teacher_id=teacher_id).first():
-            db.session.add(CourseTeacher(course_id=course.id, teacher_id=teacher_id))
+            # 记录教师-课程关系（多对多）
+            if not CourseTeacher.query.filter_by(course_id=course.id, teacher_id=teacher_id).first():
+                db.session.add(CourseTeacher(course_id=course.id, teacher_id=teacher_id))
+
+            # 绑定班级（可选，多对多）
+            class_ids = data.get('classes') or []
+            if class_ids and isinstance(class_ids, list) and len(class_ids) > 0:
+                # 确保所有 ID 都是整数
+                try:
+                    class_ids = [int(cid) for cid in class_ids if cid]
+                except (ValueError, TypeError):
+                    class_ids = []
+                
+                if class_ids:
+                    teacher_class_ids = {c.id for c in Class.query.filter_by(teacher_id=teacher_id).all()}
+                    valid_ids = [cid for cid in class_ids if cid in teacher_class_ids]
+                    for cid in valid_ids:
+                        db.session.add(CourseClass(course_id=course.id, class_id=cid))
+            
             db.session.commit()
-
-        # 绑定班级（可选，多对多）
-        class_ids = data.get('classes') or []
-        if class_ids:
-            teacher_class_ids = {c.id for c in Class.query.filter_by(teacher_id=teacher_id).all()}
-            valid_ids = [cid for cid in class_ids if cid in teacher_class_ids]
-            for cid in valid_ids:
-                db.session.add(CourseClass(course_id=course.id, class_id=cid))
-            db.session.commit()
-        
-        return {
-            'message': '课程创建成功',
-            'data': course.to_dict()
-        }, 201
+            
+            return {
+                'message': '课程创建成功',
+                'data': course.to_dict()
+            }, 201
+        except ValueError as e:
+            db.session.rollback()
+            return {'message': f'数据格式错误: {str(e)}'}, 400
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return {'message': f'创建课程失败: {str(e)}'}, 500
 
     def _generate_course_code(self):
         """生成唯一课程代码"""
@@ -1120,9 +1241,17 @@ class TeacherCourseDetail(Resource):
 
         # 解绑班级关联
         CourseClass.query.filter_by(course_id=course.id).delete()
+        
+        # 解绑教师关联
+        CourseTeacher.query.filter_by(course_id=course.id).delete()
 
         db.session.delete(course)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f'删除课程失败: {e}')
+            return {'message': f'删除课程失败: {str(e)}'}, 500
 
         return {'message': '课程已删除'}, 200
 

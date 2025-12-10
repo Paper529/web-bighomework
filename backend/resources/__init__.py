@@ -5,11 +5,12 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 api = Api(api_bp)
 
 # 导入所有资源
-from .auth import Login, Register, RefreshToken, Logout
+# 注意：认证路由已在 app.py 中直接定义，这里不再注册
 from .teacher import (
     TeacherClasses, TeacherClassDetail,
     TeacherExams, TeacherExamDetail, TeacherExamPublish,
     TeacherScores, TeacherScoreDetail,
+    ScoreImportExport,
     TeacherCourses, TeacherCourseDetail,
     TeacherCourseClasses,
     TeacherQuestions, TeacherQuestionDetail,
@@ -23,12 +24,6 @@ from .student import (
     StudentSubmitExam, StudentExamResult
 )
 
-# 认证资源
-api.add_resource(Login, '/auth/login')
-api.add_resource(Register, '/auth/register')
-api.add_resource(RefreshToken, '/auth/refresh')
-api.add_resource(Logout, '/auth/logout')
-
 # 教师资源
 api.add_resource(TeacherClasses, '/teacher/classes')
 api.add_resource(TeacherClassDetail, '/teacher/classes/<int:class_id>')
@@ -39,6 +34,7 @@ api.add_resource(TeacherExamDetail, '/teacher/exams/<int:exam_id>')
 api.add_resource(TeacherExamPublish, '/teacher/exams/<int:exam_id>/publish')
 api.add_resource(TeacherScores, '/teacher/scores')
 api.add_resource(TeacherScoreDetail, '/teacher/scores/<int:score_id>')
+api.add_resource(ScoreImportExport, '/teacher/scores/import', '/teacher/scores/export')
 api.add_resource(TeacherCourses, '/teacher/courses')
 api.add_resource(TeacherCourseDetail, '/teacher/courses/<int:course_id>')
 api.add_resource(TeacherCourseClasses, '/teacher/courses/<int:course_id>/classes')

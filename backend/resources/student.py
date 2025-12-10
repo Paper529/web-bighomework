@@ -270,7 +270,7 @@ class StudentSubmitExam(Resource):
                     subject=exam.title,
                     score=total_score,
                     total_score=exam.total_score,
-                    type=ScoreType.EXAM,
+                    type='exam',
                     recorded_by=exam.teacher_id,
                     comments=f'自动批改：{exam.title}'
                 )

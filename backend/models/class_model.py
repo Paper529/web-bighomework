@@ -10,7 +10,7 @@ class Class(db.Model):
     name = db.Column(db.String(100), nullable=False)
     code = db.Column(db.String(20), unique=True, nullable=False, index=True)
     description = db.Column(db.Text)
-    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'))
     max_students = db.Column(db.Integer, default=100)
     is_active = db.Column(db.Boolean, default=True)

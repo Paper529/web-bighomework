@@ -87,8 +87,8 @@ class ScoreService:
         """获取导出用的成绩数据"""
         # 构建查询
         query = db.session.query(
-            User.name.label('student_name'),
-            User.username.label('student_id'),
+            User.real_name.label('student_name'),
+            User.system_account.label('student_id'),
             Class.name.label('class_name'),
             Exam.title.label('exam_title'),
             Score.subject,
@@ -107,12 +107,28 @@ class ScoreService:
             query = query.filter(Score.class_id == class_id)
 
         if start_date:
+            # 确保 start_date 是字符串时转换为 datetime
+            if isinstance(start_date, str):
+                from datetime import datetime
+                try:
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d')
+                except:
+                    print(f'无法解析开始日期: {start_date}')
             query = query.filter(Score.recorded_at >= start_date)
 
         if end_date:
+            # 确保 end_date 是字符串时转换为 datetime，并设置为当天的结束时间
+            if isinstance(end_date, str):
+                from datetime import datetime, timedelta
+                try:
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1) - timedelta(seconds=1)
+                except:
+                    print(f'无法解析结束日期: {end_date}')
             query = query.filter(Score.recorded_at <= end_date)
 
+        print(f'[ScoreService] 查询条件: class_id={class_id}, start_date={start_date}, end_date={end_date}')
         scores = query.order_by(Score.recorded_at.desc()).all()
+        print(f'[ScoreService] 查询结果: {len(scores)} 条记录')
 
         # 转换为字典列表
         result = []

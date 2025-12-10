@@ -18,7 +18,7 @@ class Notification(db.Model):
     __tablename__ = 'notifications'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     type = db.Column(Enum('exam_published', 'exam_reminder', 'score_released', 'system', name='notificationtype'), nullable=False)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text)

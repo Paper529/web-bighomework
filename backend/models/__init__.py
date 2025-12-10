@@ -51,7 +51,7 @@ def get_model_class(model_name: str) -> Type[Base]:
 def import_all_models():
     """导入所有模型，用于初始化"""
     # 这将在应用上下文中调用，确保所有模型都注册到 metadata
-    from . import user, class_model, score, course, exam, question
+    from . import user, class_model, score, course, exam, question, role
     return {
         'User': user.User,
         'StudentClass': user.StudentClass,
@@ -59,6 +59,7 @@ def import_all_models():
         'ChatRoom': class_model.ChatRoom,
         'Score': score.Score,
         'ScoreType': score.ScoreType,
+        'Role': role.Role,
         # 添加其他模型...
     }
 

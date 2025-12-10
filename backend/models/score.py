@@ -15,7 +15,7 @@ class Score(db.Model):
     }
 
     id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
     exam_id = db.Column(db.Integer, db.ForeignKey('exams.id'))
     subject = db.Column(db.String(100), nullable=False)
@@ -25,7 +25,7 @@ class Score(db.Model):
     percentage = db.Column(db.Float, db.Computed('(score / total_score) * 100', persisted=True))
     # 使用字符串枚举，保持与数据库定义一致（exam/manual/imported）
     type = db.Column(db.Enum('exam', 'manual', 'imported', name='scoretype'), default='manual')
-    recorded_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    recorded_by = db.Column(db.Integer, db.ForeignKey('users.user_id'))
     comments = db.Column(db.Text)
     recorded_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

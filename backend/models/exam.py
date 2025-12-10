@@ -30,7 +30,7 @@ class Exam(db.Model):
     description = db.Column(db.Text)
     # 可选主班级（兼容旧数据），真实发布班级存放在 exam_classes 关联表
     class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=True)
-    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     question_bank_id = db.Column(db.Integer, db.ForeignKey('question_banks.id'))
     total_questions = db.Column(db.Integer, default=0)
     total_score = db.Column(db.Float, default=100.0)
@@ -51,6 +51,28 @@ class Exam(db.Model):
     exam_classes = db.relationship('ExamClass', backref='exam', cascade='all, delete-orphan', lazy='select')
 
     def to_dict(self):
+        # 计算应参与考试的学生总数（基于发布的班级）
+        total_students = 0
+        try:
+            from models.user import StudentClass
+            class_ids = [ec.class_id for ec in self.exam_classes] if hasattr(self, 'exam_classes') and self.exam_classes else []
+            if class_ids:
+                # 统计所有发布班级的学生总数（去重）
+                total_students = db.session.query(StudentClass.student_id).filter(
+                    StudentClass.class_id.in_(class_ids)
+                ).distinct().count()
+        except Exception as e:
+            print(f'计算应参与人数失败: {e}')
+            total_students = 0
+        
+        # 计算实际参与人数（已提交答案的学生数）
+        participant_count = 0
+        try:
+            participant_count = self.results.count() if hasattr(self, 'results') else 0
+        except Exception as e:
+            print(f'计算实际参与人数失败: {e}')
+            participant_count = 0
+        
         return {
             'id': self.id,
             'title': self.title,
@@ -68,6 +90,8 @@ class Exam(db.Model):
             'status': self.status if isinstance(self.status, str) else (self.status.value if self.status else None),
             'scheduled_publish_time': self.scheduled_publish_time.isoformat() if self.scheduled_publish_time else None,
             'auto_grade': self.auto_grade,
+            'total_students': total_students,  # 应参与考试的学生总数
+            'participant_count': participant_count,  # 实际参与人数（已提交答案）
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -91,7 +115,7 @@ class QuestionBank(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     is_public = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
@@ -146,7 +170,7 @@ class ExamResult(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     exam_id = db.Column(db.Integer, db.ForeignKey('exams.id'), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     score = db.Column(db.Float, default=0.0)
     total_score = db.Column(db.Float)
     start_time = db.Column(db.DateTime)

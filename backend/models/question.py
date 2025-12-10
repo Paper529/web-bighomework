@@ -14,7 +14,7 @@ class Question(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
-    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     type = db.Column(Enum(QuestionType), default=QuestionType.INDIVIDUAL)
     random_count = db.Column(db.Integer)
@@ -49,7 +49,7 @@ class QuestionStudent(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
@@ -62,7 +62,7 @@ class Answer(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     likes = db.Column(db.Integer, default=0)
     is_anonymous = db.Column(db.Boolean, default=False)
@@ -93,7 +93,7 @@ class Reply(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     answer_id = db.Column(db.Integer, db.ForeignKey('answers.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -115,7 +115,7 @@ class ChatMessage(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     chat_room_id = db.Column(db.Integer, db.ForeignKey('chat_rooms.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     message_type = db.Column(db.String(20), default='text')  # text, image, file
     file_url = db.Column(db.String(500))
